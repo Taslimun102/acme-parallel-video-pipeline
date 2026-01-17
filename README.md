@@ -17,8 +17,8 @@ Verify the cluster: "kubectl get nodes"
 
 2. Install the Orchestration Tool (Argo Workflows)
 
-Create the Argo namespace and install Argo Workflows: "kubectl create namespace argo
-kubectl apply -n argo -f https://raw.githubusercontent.com/argoproj/argo-workflows/stable/manifests/install.yaml"
+Create the Argo namespace and install Argo Workflows: "kubectl create namespace argo", 
+"kubectl apply -n argo -f https://raw.githubusercontent.com/argoproj/argo-workflows/stable/manifests/install.yaml"
 
 Confirm installation: "kubectl get pods -n argo"
 
