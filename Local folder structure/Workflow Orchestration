@@ -1,1 +1,136 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: parallel-video-pipeline-
+  namespace: argo
+spec:
+  entrypoint: main
+  arguments:
+    parameters:
+      - name: intervals
+        value: '["0-100","100-200","200-300"]'
+      - name: data_dir
+        value: /data
+      - name: image
+        value: acme/video-pipeline:dev
+
+  volumes:
+    - name: shared-data
+      persistentVolumeClaim:
+        claimName: video-pipeline-pvc
+
+  templates:
+    # Main DAG
+    - name: main
+      dag:
+        tasks:
+          - name: phase0
+            template: phase0
+
+          - name: per-interval
+            dependencies: [phase0]
+            template: process-interval
+            arguments:
+              parameters:
+                - name: interval
+                  value: "{{item}}"
+            withParam: "{{workflow.parameters.intervals}}"
+
+          - name: phase3
+            dependencies: [per-interval]
+            template: phase3
+
+    # Interval subflow: Phase1 -> Phase2 (per interval)
+    - name: process-interval
+      inputs:
+        parameters:
+          - name: interval
+      dag:
+        tasks:
+          - name: phase1
+            template: phase1
+            arguments:
+              parameters:
+                - name: interval
+                  value: "{{inputs.parameters.interval}}"
+
+          - name: phase2
+            dependencies: [phase1]
+            template: phase2
+            arguments:
+              parameters:
+                - name: interval
+                  value: "{{inputs.parameters.interval}}"
+
+    # Phase 0
+    - name: phase0
+      container:
+        image: "{{workflow.parameters.image}}"
+        command: ["python", "-u", "/app/scripts/phase_0.py"]
+        args: ["--data-dir", "{{workflow.parameters.data_dir}}"]
+      volumeMounts:
+        - name: shared-data
+          mountPath: /data
+
+    # Phase 1 (heavy): schedule differently (see section 4)
+    - name: phase1
+      inputs:
+        parameters:
+          - name: interval
+      container:
+        image: "{{workflow.parameters.image}}"
+        command: ["python", "-u", "/app/scripts/phase_1.py"]
+        args:
+          - "--interval"
+          - "{{inputs.parameters.interval}}"
+          - "--data-dir"
+          - "{{workflow.parameters.data_dir}}"
+      volumeMounts:
+        - name: shared-data
+          mountPath: /data
+
+      # Resource requests for "heavy"
+      resources:
+        requests:
+          cpu: "1500m"
+          memory: "1Gi"
+        limits:
+          cpu: "3000m"
+          memory: "2Gi"
+
+      # Node isolation simulation (example)
+      nodeSelector:
+        node-type: high-cpu
+      tolerations:
+        - key: "dedicated"
+          operator: "Equal"
+          value: "high-cpu"
+          effect: "NoSchedule"
+
+    # Phase 2
+    - name: phase2
+      inputs:
+        parameters:
+          - name: interval
+      container:
+        image: "{{workflow.parameters.image}}"
+        command: ["python", "-u", "/app/scripts/phase_2.py"]
+        args:
+          - "--interval"
+          - "{{inputs.parameters.interval}}"
+          - "--data-dir"
+          - "{{workflow.parameters.data_dir}}"
+      volumeMounts:
+        - name: shared-data
+          mountPath: /data
+
+    # Phase 3
+    - name: phase3
+      container:
+        image: "{{workflow.parameters.image}}"
+        command: ["python", "-u", "/app/scripts/phase_3.py"]
+        args: ["--data-dir", "{{workflow.parameters.data_dir}}"]
+      volumeMounts:
+        - name: shared-data
+          mountPath: /data
 
